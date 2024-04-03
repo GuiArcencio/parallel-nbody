@@ -2,3 +2,5 @@
 sequential
 multicore
 gpu
+!results/gpu
+!results/multicore
