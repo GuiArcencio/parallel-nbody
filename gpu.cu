@@ -1,5 +1,3 @@
-#include "generate.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -10,59 +8,88 @@
 #define ETA 0.05
 #define EPSILON 0.001
 
+void generate_bodies(float4 *particles, float3 *velocities, unsigned int N, unsigned int seed) {
+    srand(seed);
+
+    for (int i = 0; i < N; i++) {
+        particles[i].x = ((float) rand()) / RAND_MAX;
+        particles[i].y = ((float) rand()) / RAND_MAX;
+        particles[i].z = ((float) rand()) / RAND_MAX;
+        velocities[i].x = ((float) rand()) / RAND_MAX;
+        velocities[i].y = ((float) rand()) / RAND_MAX;
+        velocities[i].z = ((float) rand()) / RAND_MAX;
+        particles[i].w = (1 * ((float) rand()) / RAND_MAX) + 0.001;
+    }
+}
+
+__device__
+float3 interaction(float3 a_i, float4 p_i, float4 p_j, float epsilon_squared) {
+    float3 r;   
+    r.x = p_i.x - p_j.x;
+    r.y = p_i.y - p_j.y;
+    r.z = p_i.z - p_j.z;  
+    float r_squared = r.x * r.x + r.y * r.y + r.z * r.z + epsilon_squared;
+
+    float coef = p_j.w / sqrt(r_squared*r_squared*r_squared);  
+    a_i.x -= coef * r.x;
+    a_i.y -= coef * r.y;
+    a_i.z -= coef * r.z;
+    return a_i;
+}
+
 __global__
-void compute_accelerations(Particle *p, unsigned int N, float *accels, float epsilon) {
+void compute_accelerations(float4 *p, float3 *a, unsigned int N, float *accels, float epsilon) {
+    __shared__ float4 p_buffer[BLOCKSIZE];
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    float rx, ry, rz, r_squared;
 
     if (i < N) {
         float epsilon_squared = epsilon * epsilon;
-        p[i].ax = 0;
-        p[i].ay = 0;
-        p[i].az = 0;
-        for (int j = 0; j < N; j++)
-            if (i != j) {
-                rx = p[i].x - p[j].x;
-                ry = p[i].y - p[j].y;
-                rz = p[i].z - p[j].z;
-                r_squared = rx*rx + ry*ry + rz*rz;
+        float4 p_i = p[i];
+        float3 a_i = {0.0, 0.0, 0.0};
 
-                float coef = p[j].mass / pow(r_squared + epsilon_squared, 1.5);
-                p[i].ax -= coef * rx;
-                p[i].ay -= coef * ry;
-                p[i].az -= coef * rz;
-            }    
+        for (int tile = 0; tile < gridDim.x; tile++) {
+            p_buffer[threadIdx.x] = p[tile*BLOCKSIZE + threadIdx.x];
 
-        accels[i] = p[i].ax*p[i].ax + p[i].ay*p[i].ay + p[i].az*p[i].az;
+            __syncthreads();
+
+            for (int j = 0; j < BLOCKSIZE && tile*BLOCKSIZE + j < N; j++)
+                if (tile*BLOCKSIZE + j != i)
+                    a_i = interaction(a_i, p_i, p_buffer[j], epsilon_squared);
+
+            __syncthreads();
+        }
+
+        a[i] = a_i;
+        accels[i] = a_i.x*a_i.x + a_i.y*a_i.y + a_i.z*a_i.z;
     }
 }
 
 __global__
-void first_step_particles(Particle *p, unsigned int N, float dt) {
+void first_step_particles(float4 *p, float3 *p_old, float3 *v, float3 *a, unsigned int N, float dt) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (i < N) {
-        p[i].x_old = p[i].x;
-        p[i].y_old = p[i].y;
-        p[i].z_old = p[i].z;
-        p[i].x = p[i].x_old + p[i].vx * dt + 0.5 * p[i].ax * dt * dt;
-        p[i].y = p[i].y_old + p[i].vy * dt + 0.5 * p[i].ay * dt * dt;
-        p[i].z = p[i].z_old + p[i].vz * dt + 0.5 * p[i].az * dt * dt;
+        p_old[i].x = p[i].x;
+        p_old[i].y = p[i].y;
+        p_old[i].z = p[i].z;
+        p[i].x = p_old[i].x + v[i].x * dt + 0.5 * a[i].x * dt * dt;
+        p[i].y = p_old[i].y + v[i].y * dt + 0.5 * a[i].y * dt * dt;
+        p[i].z = p_old[i].z + v[i].z * dt + 0.5 * a[i].z * dt * dt;
     }
 }
 
 __global__
-void step_particles(Particle *p, unsigned int N, float dt, float dt_old) {
+void step_particles(float4 *p, float3 *p_old, float3 *a, unsigned int N, float dt, float dt_old) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (i < N) {
-        float new_x = p[i].x + (p[i].x - p[i].x_old) * (dt/dt_old) + p[i].ax * dt * (dt + dt_old) / 2.0;
-        float new_y = p[i].y + (p[i].y - p[i].y_old) * (dt/dt_old) + p[i].ay * dt * (dt + dt_old) / 2.0;
-        float new_z = p[i].z + (p[i].z - p[i].z_old) * (dt/dt_old) + p[i].az * dt * (dt + dt_old) / 2.0;
+        float new_x = p[i].x + (p[i].x - p_old[i].x) * (dt/dt_old) + a[i].x * dt * (dt + dt_old) / 2.0;
+        float new_y = p[i].y + (p[i].y - p_old[i].y) * (dt/dt_old) + a[i].y * dt * (dt + dt_old) / 2.0;
+        float new_z = p[i].z + (p[i].z - p_old[i].z) * (dt/dt_old) + a[i].z * dt * (dt + dt_old) / 2.0;
 
-        p[i].x_old = p[i].x; 
-        p[i].y_old = p[i].y;
-        p[i].z_old = p[i].z;
+        p_old[i].x = p[i].x;
+        p_old[i].y = p[i].y;
+        p_old[i].z = p[i].z;
         p[i].x = new_x;
         p[i].y = new_y;
         p[i].z = new_z;
@@ -86,30 +113,38 @@ int main(int argc, char **argv) {
     unsigned int N_steps = (unsigned int) arg2;
     unsigned int seed = (unsigned int) arg3;
     float dt, dt_old, eta, epsilon, max_a;
-    Particle *p = generate_bodies(N, seed); 
+    float4 *p = (float4*) malloc(N*sizeof(float4));
+    float3 *v = (float3*) malloc(N*sizeof(float3));
+    generate_bodies(p, v, N, seed);
 
     eta = ETA;
     epsilon = EPSILON;
-  
+
     struct timespec start, finish;
-    double elapsed;
+    float elapsed;
 
-    clock_gettime(CLOCK_MONOTONIC, &start); 
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
-    Particle *d_p;
-    float *accels = (float*) malloc(N*sizeof(float));
+    float4 *d_p;
+    float3 *d_p_old, *d_v, *d_a;
     float *d_accels;
-    cudaMalloc(&d_p, N*sizeof(Particle));
+    float *accels = (float*) malloc(N*sizeof(float));
+    cudaMalloc(&d_p, N*sizeof(float4));
+    cudaMalloc(&d_p_old, N*sizeof(float3));
+    cudaMalloc(&d_v, N*sizeof(float3));
+    cudaMalloc(&d_a, N*sizeof(float3));
     cudaMalloc(&d_accels, N*sizeof(float));
-    cudaMemcpyAsync(d_p, p, N*sizeof(Particle), cudaMemcpyHostToDevice);
+    cudaMemcpyAsync(d_p, p, N*sizeof(float4), cudaMemcpyHostToDevice);
+    cudaMemcpyAsync(d_v, v, N*sizeof(float3), cudaMemcpyHostToDevice);
 
     int grid_size = (N + BLOCKSIZE - 1) / BLOCKSIZE;
 
     // First step: use velocities
     compute_accelerations<<<grid_size, BLOCKSIZE>>>(
-        d_p, N, d_accels, epsilon
+        d_p, d_a, N, d_accels, epsilon
     );
     cudaMemcpy(accels, d_accels, N*sizeof(float), cudaMemcpyDeviceToHost);
+
     max_a = accels[0];
     for (int i = 1; i < N; i++)
         if (accels[i] > max_a) max_a = accels[i];
@@ -117,14 +152,14 @@ int main(int argc, char **argv) {
     dt = sqrt(eta * epsilon / max_a);
 
     first_step_particles<<<grid_size, BLOCKSIZE>>>(
-        d_p, N, dt
+        d_p, d_p_old, d_v, d_a, N, dt
     );
-    
+
     dt_old = dt;
 
     for (int step = 1; step < N_steps; step++) {
         compute_accelerations<<<grid_size, BLOCKSIZE>>>(
-            d_p, N, d_accels, epsilon
+            d_p, d_a, N, d_accels, epsilon
         );
         cudaMemcpy(accels, d_accels, N*sizeof(float), cudaMemcpyDeviceToHost);
         max_a = accels[0];
@@ -132,15 +167,15 @@ int main(int argc, char **argv) {
             if (accels[i] > max_a) max_a = accels[i];
         max_a = sqrt(max_a);
         dt = sqrt(eta * epsilon / max_a);
-   
+
         step_particles<<<grid_size, BLOCKSIZE>>>(
-            d_p, N, dt, dt_old
+            d_p, d_p_old, d_a, N, dt, dt_old
         );
 
         dt_old = dt;
     }
 
-    cudaMemcpy(p, d_p, N*sizeof(Particle), cudaMemcpyDeviceToHost);
+    cudaMemcpy(p, d_p, N*sizeof(float4), cudaMemcpyDeviceToHost);
 
     clock_gettime(CLOCK_MONOTONIC, &finish);
 
@@ -150,10 +185,9 @@ int main(int argc, char **argv) {
     printf("%lf\n", elapsed);
 
 #ifdef DEBUG
-    for (int i = 0; i < N; i++) 
+    for (int i = 0; i < N; i++)
         printf("%.6f,%.6f,%.6f\n", p[i].x, p[i].y, p[i].z);
 #endif
 
     return 0;
 }
-
