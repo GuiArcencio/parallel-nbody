@@ -9,7 +9,7 @@
 #define ETA 0.05
 #define EPSILON 0.001
 
-void compute_accelerations(Particle *p, unsigned int N, double *max_a, double epsilon);
+void compute_accelerations(Particle *p, unsigned int N, float *max_a, float epsilon);
 
 int main(int argc, char **argv) {
     if (argc != 4) {
@@ -27,13 +27,13 @@ int main(int argc, char **argv) {
     unsigned int N = (unsigned int) arg1;
     unsigned int N_steps = (unsigned int) arg2;
     unsigned int seed = (unsigned int) arg3;
-    double dt, dt_old, eta, epsilon, max_a;
+    float dt, dt_old, eta, epsilon, max_a;
     Particle *p = generate_bodies(N, seed); 
     eta = ETA;
     epsilon = EPSILON;
    
     struct timespec start, finish;
-    double elapsed;
+    float elapsed;
 
     clock_gettime(CLOCK_MONOTONIC, &start); 
 
@@ -58,9 +58,9 @@ int main(int argc, char **argv) {
        
         #pragma omp parallel for
         for (int i = 0; i < N; i++) {
-            double new_x = p[i].x + (p[i].x - p[i].x_old) * (dt/dt_old) + p[i].ax * dt * (dt + dt_old) / 2.0;
-            double new_y = p[i].y + (p[i].y - p[i].y_old) * (dt/dt_old) + p[i].ay * dt * (dt + dt_old) / 2.0;
-            double new_z = p[i].z + (p[i].z - p[i].z_old) * (dt/dt_old) + p[i].az * dt * (dt + dt_old) / 2.0;
+            float new_x = p[i].x + (p[i].x - p[i].x_old) * (dt/dt_old) + p[i].ax * dt * (dt + dt_old) / 2.0;
+            float new_y = p[i].y + (p[i].y - p[i].y_old) * (dt/dt_old) + p[i].ay * dt * (dt + dt_old) / 2.0;
+            float new_z = p[i].z + (p[i].z - p[i].z_old) * (dt/dt_old) + p[i].az * dt * (dt + dt_old) / 2.0;
 
             p[i].x_old = p[i].x; 
             p[i].y_old = p[i].y;
@@ -88,13 +88,13 @@ int main(int argc, char **argv) {
     return 0;
 }
 
-void compute_accelerations(Particle *p, unsigned int N, double *max_a, double epsilon) {
-    double epsilon_squared = epsilon * epsilon;
-    double current_max_a = -1.0;
+void compute_accelerations(Particle *p, unsigned int N, float *max_a, float epsilon) {
+    float epsilon_squared = epsilon * epsilon;
+    float current_max_a = -1.0;
 
     #pragma omp parallel for reduction(max:current_max_a)
     for (int i = 0; i < N; i++) {
-        double rx, ry, rz, r_squared;
+        float rx, ry, rz, r_squared;
         p[i].ax = 0;
         p[i].ay = 0;
         p[i].az = 0;
@@ -105,13 +105,13 @@ void compute_accelerations(Particle *p, unsigned int N, double *max_a, double ep
                 rz = p[i].z - p[j].z;
                 r_squared = rx*rx + ry*ry + rz*rz;
 
-                double coef = p[j].mass / pow(r_squared + epsilon_squared, 1.5);
+                float coef = p[j].mass / pow(r_squared + epsilon_squared, 1.5);
                 p[i].ax -= coef * rx;
                 p[i].ay -= coef * ry;
                 p[i].az -= coef * rz;
             }    
 
-        double a = p[i].ax*p[i].ax + p[i].ay*p[i].ay + p[i].az*p[i].az;
+        float a = p[i].ax*p[i].ax + p[i].ay*p[i].ay + p[i].az*p[i].az;
         if (a > current_max_a)
             current_max_a = a;
     }

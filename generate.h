@@ -2,11 +2,11 @@
 #define GENERATE_H
 
 typedef struct {
-    double x, y, z;
-    double x_old, y_old, z_old;
-    double vx, vy, vz;
-    double ax, ay, az;
-    double mass;
+    float x, y, z;
+    float x_old, y_old, z_old;
+    float vx, vy, vz;
+    float ax, ay, az;
+    float mass;
 } Particle;
 
 Particle *generate_bodies(unsigned int N, unsigned int seed);

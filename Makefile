@@ -11,7 +11,7 @@ multicore: multicore.c generate.o
 	$(CC) $(FLAGS) -fopenmp multicore.c generate.o -o multicore
 
 gpu: gpu.cu
-	nvcc -lm -O3 gpu.cu -o gpu
+	nvcc -lm -use_fast_math -O3 gpu.cu -o gpu
 
 generate.o: generate.c generate.h
 	$(CC) $(FLAGS) -c generate.c -o generate.o
