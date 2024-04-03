@@ -6,7 +6,7 @@ makedirs("results/multicore", exist_ok=True)
 run(["make", "multicore"])
 
 for N in [25000, 50000, 100000]:
-    for n_threads in [1, 2, 4, 8, 16, 32]:
+    for n_threads in [1, 8, 16, 32, 64, 128]:
         runtimes = []
         for _ in range(5):
             process = run(
