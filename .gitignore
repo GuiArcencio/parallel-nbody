@@ -4,3 +4,7 @@ multicore
 gpu
 !results/gpu
 !results/multicore
+env
+*.ipynb
+*.pdf
+
