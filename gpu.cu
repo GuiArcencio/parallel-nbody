@@ -4,7 +4,9 @@
 #include <time.h>
 
 // #define DEBUG
+#ifndef BLOCKSIZE
 #define BLOCKSIZE 256
+#endif
 #define ETA 0.05
 #define EPSILON 0.001
 

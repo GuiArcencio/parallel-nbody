@@ -17,5 +17,5 @@ for N in [25000, 50000, 100000]:
                 }
             )
             runtimes.append(process.stdout.decode("utf-8"))
-        with open(f"results/multicore/{N}_bodies_{n_threads}_threads.txt", "a") as f:
+        with open(f"results/multicore/{N}_bodies_{n_threads}_threads.txt", "w") as f:
             f.write("".join(runtimes))
