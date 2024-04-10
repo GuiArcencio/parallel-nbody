@@ -4,7 +4,7 @@ from subprocess import run
 makedirs("results/gpu", exist_ok=True)
 
 for N in [25000, 50000, 100000]:
-    for tpb in [32, 128, 256, 512, 1024]:
+    for tpb in [32, 64, 128, 256, 512, 1024]:
         runtimes = []
         # nvcc -lm -use_fast_math -O3 gpu.cu -o gpu
         run([
